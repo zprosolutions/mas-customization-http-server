@@ -86,7 +86,6 @@ metadata:
   name: expressfs
   namespace: file-uploader
 spec:
-  host: file-upload-file-uploader.apps.mkprod.zprocloud.com
   to:
     kind: Service
     name: expressfs
