@@ -33,7 +33,7 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:  
   name: expressfs     
-  namespace: default  
+  namespace: file-uploader  
 spec:
   replicas: 1
   selector:
@@ -70,12 +70,13 @@ apiVersion: v1
 kind: Service
 metadata:
   name: expressfs
-  namespace: default
+  namespace: file-uploader  
 spec:
   selector:
     app: expressfs
   ports:
-    - protocol: TCP
+    - name: http
+      protocol: TCP
       port: 80
       targetPort: 8080
 ---
@@ -83,12 +84,17 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: expressfs
-  namespace: default
+  namespace: file-uploader
 spec:
-  path: /
+  host: file-upload-file-uploader.apps.mkprod.zprocloud.com
   to:
     kind: Service
     name: expressfs
+    weight: 100
   port:
-    targetPort: 8080
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
 ```
