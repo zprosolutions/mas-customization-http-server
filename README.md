@@ -1,3 +1,81 @@
+## OpenShift Deployment
+
+### Quick Deploy
+
+Deploy ExpressFS to OpenShift with a single command:
+
+```bash
+oc apply -f openshift/expressfs-deployment.yaml
+```
+
+This creates:
+- **Deployment** with health checks and resource limits
+- **Service** for internal cluster communication
+- **Route** for external access
+- **PersistentVolumeClaim** (10Gi) for file storage
+
+### Access the Application
+
+```bash
+# Get the route URL
+oc get route expressfs -o jsonpath='{"https://"}{.spec.host}{"\n"}'
+```
+
+### Verify Deployment
+
+```bash
+# Check all resources
+oc get all -l app=expressfs
+
+# View logs
+oc logs -l app=expressfs -f
+```
+
+### Detailed Instructions
+
+For comprehensive deployment instructions, troubleshooting, scaling, monitoring, and advanced configuration, see:
+
+📖 **[OpenShift Deployment Guide](openshift/README.md)**
+
+The guide includes:
+- Step-by-step deployment instructions
+- Configuration options
+- Scaling and updates
+- Troubleshooting tips
+- Security best practices
+- Backup and restore procedures
+- Advanced configurations
+
+## Development
+
+### Running in Development Mode
+
+```bash
+NODE_ENV=development npm start
+```
+
+### Project Scripts
+
+- `npm start` - Start the server
+- `npm test` - Run tests (to be implemented)
+
+## Security Considerations
+
+- File upload size limits are enforced
+- Filename validation prevents directory traversal attacks
+- Input validation on all API endpoints
+- CORS can be configured in `app.js` if needed
+- Consider adding authentication for production use
+
+## Performance Optimization
+
+- Static files are served with Express static middleware
+- Pagination reduces memory usage for large file lists
+- Async/await pattern for non-blocking operations
+- Efficient file streaming for uploads
+
+
+
 # ExpressFS - Simple Static File Server
 
 A modern, feature-rich static file server built with Express.js, featuring file upload, pagination, progress tracking, and an intuitive web interface.
@@ -187,81 +265,6 @@ services:
       - PORT=8080
 ```
 
-## OpenShift Deployment
-
-### Quick Deploy
-
-Deploy ExpressFS to OpenShift with a single command:
-
-```bash
-oc apply -f openshift/expressfs-deployment.yaml
-```
-
-This creates:
-- **Deployment** with health checks and resource limits
-- **Service** for internal cluster communication
-- **Route** for external access
-- **PersistentVolumeClaim** (10Gi) for file storage
-
-### Access the Application
-
-```bash
-# Get the route URL
-oc get route expressfs -o jsonpath='{"https://"}{.spec.host}{"\n"}'
-```
-
-### Verify Deployment
-
-```bash
-# Check all resources
-oc get all -l app=expressfs
-
-# View logs
-oc logs -l app=expressfs -f
-```
-
-### Detailed Instructions
-
-For comprehensive deployment instructions, troubleshooting, scaling, monitoring, and advanced configuration, see:
-
-📖 **[OpenShift Deployment Guide](openshift/README.md)**
-
-The guide includes:
-- Step-by-step deployment instructions
-- Configuration options
-- Scaling and updates
-- Troubleshooting tips
-- Security best practices
-- Backup and restore procedures
-- Advanced configurations
-
-## Development
-
-### Running in Development Mode
-
-```bash
-NODE_ENV=development npm start
-```
-
-### Project Scripts
-
-- `npm start` - Start the server
-- `npm test` - Run tests (to be implemented)
-
-## Security Considerations
-
-- File upload size limits are enforced
-- Filename validation prevents directory traversal attacks
-- Input validation on all API endpoints
-- CORS can be configured in `app.js` if needed
-- Consider adding authentication for production use
-
-## Performance Optimization
-
-- Static files are served with Express static middleware
-- Pagination reduces memory usage for large file lists
-- Async/await pattern for non-blocking operations
-- Efficient file streaming for uploads
 
 ## Troubleshooting
 
