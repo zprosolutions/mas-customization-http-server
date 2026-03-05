@@ -2,7 +2,7 @@ FROM node:18-alpine
 
 LABEL author="Daniel Istrate" \
       description="ExpressFS - Simple Static File Server" \
-      version="2.0.0"
+      version="2.0.4"
 
 # Create application directory
 WORKDIR /app
@@ -11,7 +11,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production && \
+RUN npm install --omit=dev && \
     npm cache clean --force
 
 # Copy application files
@@ -24,12 +24,14 @@ COPY public ./public
 
 # Create store directory with proper permissions
 RUN mkdir -p store && \
-    chmod 755 store
+    chmod 777 store
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001 && \
-    chown -R nodejs:nodejs /app
+    chown -R nodejs:nodejs /app && \
+    chgrp -R 0 /app && \
+    chmod -R g=u /app
 
 # Switch to non-root user
 USER nodejs
