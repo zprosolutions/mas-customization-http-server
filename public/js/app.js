@@ -1,32 +1,30 @@
-/**
- * ExpressFS Frontend Application
- */
+/* ZPro File Server – Frontend */
 
-// Application state
 const state = {
     filesVisible: false,
     currentPage: 1,
     itemsPerPage: 10,
     paginationData: null,
-    uploadInProgress: false
+    uploadInProgress: false,
+    internalBaseUrl: '',
+    externalBaseUrl: ''
 };
 
-// Initialize application
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('ExpressFS initialized');
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const cfg = await fetch('/api/config').then(r => r.json());
+        state.internalBaseUrl = cfg.internalBaseUrl || '';
+        state.externalBaseUrl = cfg.externalBaseUrl || '';
+    } catch (_) {}
 });
 
-// Modal functions
+// ── Modal ─────────────────────────────────────────────────────────────────────
 function openUploadModal() {
     document.getElementById('uploadModal').style.display = 'block';
 }
 
 function closeUploadModal() {
-    if (state.uploadInProgress) {
-        if (!confirm('Upload is in progress. Are you sure you want to close?')) {
-            return;
-        }
-    }
+    if (state.uploadInProgress && !confirm('Upload in progress. Close anyway?')) return;
     document.getElementById('uploadModal').style.display = 'none';
     document.getElementById('uploadForm').reset();
     document.getElementById('progressContainer').classList.remove('active');
@@ -36,61 +34,45 @@ function closeUploadModal() {
     state.uploadInProgress = false;
 }
 
-// Close modal when clicking outside
-window.onclick = function(event) {
+window.onclick = e => {
     const modal = document.getElementById('uploadModal');
-    if (event.target === modal && !state.uploadInProgress) {
-        closeUploadModal();
-    }
-}
+    if (e.target === modal && !state.uploadInProgress) closeUploadModal();
+};
 
-// Go to List Files from upload modal
 function goToListFiles() {
     closeUploadModal();
-    if (!state.filesVisible) {
-        toggleFileList();
-    }
+    if (!state.filesVisible) toggleFileList();
 }
 
-// Update file count display
+// ── File input display ────────────────────────────────────────────────────────
 function updateFileCount() {
-    const fileInput = document.getElementById('fileInput');
-    const info = document.getElementById('selectedFilesInfo');
-    
-    if (fileInput.files.length > 0) {
-        const totalSize = Array.from(fileInput.files).reduce((sum, file) => sum + file.size, 0);
-        info.textContent = `${fileInput.files.length} file(s) selected (${formatFileSize(totalSize)})`;
+    const input = document.getElementById('fileInput');
+    const info  = document.getElementById('selectedFilesInfo');
+    if (input.files.length > 0) {
+        const total = Array.from(input.files).reduce((s, f) => s + f.size, 0);
+        info.textContent = `${input.files.length} file(s) selected (${formatFileSize(total)})`;
         info.style.display = 'block';
     } else {
         info.style.display = 'none';
     }
 }
 
-// Show message to user
-function showMessage(message, type) {
+// ── Messages ──────────────────────────────────────────────────────────────────
+function showMessage(text, type) {
     const container = document.getElementById('messageContainer');
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${type}`;
-    messageDiv.textContent = message;
+    const div = document.createElement('div');
+    div.className = `message ${type}`;
+    div.textContent = text;
     container.innerHTML = '';
-    container.appendChild(messageDiv);
-
-    setTimeout(() => {
-        messageDiv.remove();
-    }, 5000);
+    container.appendChild(div);
+    setTimeout(() => div.remove(), 5000);
 }
 
-// Upload files
+// ── Upload ────────────────────────────────────────────────────────────────────
 async function uploadFiles(event) {
     event.preventDefault();
-    
-    const fileInput = document.getElementById('fileInput');
-    const files = Array.from(fileInput.files);
-    
-    if (files.length === 0) {
-        showMessage('Please select at least one file', 'error');
-        return;
-    }
+    const files = Array.from(document.getElementById('fileInput').files);
+    if (files.length === 0) { showMessage('Please select at least one file', 'error'); return; }
 
     const progressContainer = document.getElementById('progressContainer');
     const progressList = document.getElementById('progressList');
@@ -103,107 +85,81 @@ async function uploadFiles(event) {
     state.uploadInProgress = true;
     uploadSummary.style.display = 'none';
 
-    // Create progress bars for each file
-    const progressBars = {};
-    files.forEach((file, index) => {
-        const progressItem = document.createElement('div');
-        progressItem.className = 'file-progress-item';
-        progressItem.innerHTML = `
-            <div class="file-progress-name">📄 ${file.name} (${formatFileSize(file.size)})</div>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progress-${index}">0%</div>
-            </div>
-        `;
-        progressList.appendChild(progressItem);
-        progressBars[index] = document.getElementById(`progress-${index}`);
+    const bars = {};
+    files.forEach((file, i) => {
+        const item = document.createElement('div');
+        item.className = 'file-progress-item';
+        item.innerHTML = `
+            <div class="file-progress-name">${file.name} (${formatFileSize(file.size)})</div>
+            <div class="progress-bar"><div class="progress-fill" id="prog-${i}">0%</div></div>`;
+        progressList.appendChild(item);
+        bars[i] = document.getElementById(`prog-${i}`);
     });
 
     const results = [];
-
-    // Upload files sequentially to show individual progress
     for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const formData = new FormData();
-        formData.append('target_file', file);
-
+        const fd = new FormData();
+        fd.append('target_file', files[i]);
         try {
-            await uploadSingleFile(formData, progressBars[i]);
-            results.push({ filename: file.name, success: true });
-        } catch (error) {
-            results.push({ filename: file.name, success: false, error: error.message });
+            await uploadSingleFile(fd, bars[i]);
+            results.push({ success: true });
+        } catch {
+            results.push({ success: false });
         }
     }
 
     state.uploadInProgress = false;
     uploadBtn.disabled = false;
 
-    // Show summary
-    const successCount = results.filter(r => r.success).length;
-    const failCount = results.length - successCount;
-    
-    let summaryClass = 'success';
-    let summaryText = `✅ Successfully uploaded ${successCount} file(s)`;
-    
-    if (failCount > 0) {
-        summaryClass = 'partial';
-        summaryText = `⚠️ Uploaded ${successCount} file(s), ${failCount} failed`;
-    }
-    
-    uploadSummary.className = `upload-summary ${summaryClass}`;
-    uploadSummary.textContent = summaryText;
+    const ok = results.filter(r => r.success).length;
+    const fail = results.length - ok;
+    const cls = fail > 0 ? 'partial' : 'success';
+    const msg = fail > 0 ? `Uploaded ${ok} file(s), ${fail} failed` : `Successfully uploaded ${ok} file(s)`;
+    uploadSummary.className = `upload-summary ${cls}`;
+    uploadSummary.textContent = msg;
     uploadSummary.style.display = 'block';
+    showMessage(msg, fail > 0 ? 'error' : 'success');
 
-    showMessage(summaryText, failCount > 0 ? 'error' : 'success');
-
-    if (state.filesVisible) {
-        setTimeout(() => loadFiles(), 1000);
-    }
+    if (state.filesVisible) setTimeout(loadFiles, 1000);
 }
 
-// Upload single file with progress tracking
-function uploadSingleFile(formData, progressBar) {
+function uploadSingleFile(formData, bar) {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-
-        xhr.upload.addEventListener('progress', (e) => {
+        xhr.upload.addEventListener('progress', e => {
             if (e.lengthComputable) {
-                const percentComplete = Math.round((e.loaded / e.total) * 100);
-                progressBar.style.width = percentComplete + '%';
-                progressBar.textContent = percentComplete + '%';
+                const pct = Math.round(e.loaded / e.total * 100);
+                bar.style.width = pct + '%';
+                bar.textContent = pct + '%';
             }
         });
-
         xhr.addEventListener('load', () => {
-            if (xhr.status === 200) {
-                progressBar.style.width = '100%';
-                progressBar.textContent = '✓ Complete';
-                progressBar.classList.add('complete');
+            if (xhr.status === 200 || xhr.status === 207) {
+                bar.style.width = '100%';
+                bar.textContent = 'Done';
+                bar.classList.add('complete');
                 resolve();
             } else {
-                progressBar.style.width = '100%';
-                progressBar.textContent = '✗ Failed';
-                progressBar.classList.add('error');
+                bar.style.width = '100%';
+                bar.textContent = 'Failed';
+                bar.classList.add('error');
                 reject(new Error('Upload failed'));
             }
         });
-
         xhr.addEventListener('error', () => {
-            progressBar.style.width = '100%';
-            progressBar.textContent = '✗ Error';
-            progressBar.classList.add('error');
+            bar.textContent = 'Error';
+            bar.classList.add('error');
             reject(new Error('Network error'));
         });
-
         xhr.open('POST', '/api/upload');
         xhr.send(formData);
     });
 }
 
-// Toggle file list visibility
+// ── File list ─────────────────────────────────────────────────────────────────
 async function toggleFileList() {
     state.filesVisible = !state.filesVisible;
     const section = document.getElementById('fileListSection');
-    
     if (state.filesVisible) {
         section.classList.add('visible');
         state.currentPage = 1;
@@ -213,279 +169,196 @@ async function toggleFileList() {
     }
 }
 
-// Load files from server
 async function loadFiles() {
     const container = document.getElementById('fileListContainer');
     container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading files...</div>';
 
     try {
-        const response = await fetch(`/api/files?page=${state.currentPage}&limit=${state.itemsPerPage}`);
-        const data = await response.json();
-        
+        const data = await fetch(`/api/files?page=${state.currentPage}&limit=${state.itemsPerPage}`).then(r => r.json());
         state.paginationData = data.pagination;
-        const files = data.files;
 
-        // Update summary section
-        updateSummary(state.paginationData);
+        updateSummary(data.pagination);
 
-        if (state.paginationData.totalFiles === 0) {
+        if (data.pagination.totalFiles === 0) {
             container.innerHTML = `
                 <div class="empty-state">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                        <polyline points="13 2 13 9 20 9"></polyline>
+                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+                        <polyline points="13 2 13 9 20 9"/>
                     </svg>
                     <h3>No files uploaded yet</h3>
                     <p>Click "Upload Files" to get started</p>
-                </div>
-            `;
+                </div>`;
             document.getElementById('summarySection').style.display = 'none';
             document.getElementById('paginationControls').style.display = 'none';
             return;
         }
 
-        // Show pagination controls
         document.getElementById('paginationControls').style.display = 'flex';
 
         let html = '<div class="file-list">';
-        files.forEach(file => {
+        for (const file of data.files) {
             const date = new Date(file.uploadDate);
-            const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-            const fileSize = formatFileSize(file.size);
-            const encodedFilename = encodeURIComponent(file.name);
-            
+            const enc  = encodeURIComponent(file.name);
+            const copyBtns = buildCopyButtons(file.name);
+
             html += `
-                <div class="file-item">
-                    <input type="checkbox" class="file-checkbox" value="${file.name}" onchange="updateActionButtons()">
-                    <div class="file-info">
-                        <div class="file-name">📄 ${file.name}</div>
-                        <div class="file-meta">
-                            📅 ${formattedDate} | 💾 ${fileSize}
-                        </div>
-                    </div>
-                    <div class="file-actions">
-                        <button class="btn-icon btn-download-single" onclick="downloadSingleFile('${encodedFilename}')" title="Download">
-                            📥
-                        </button>
-                        <button class="btn-icon btn-delete-single" onclick="deleteSingleFile('${encodedFilename}')" title="Delete">
-                            🗑️
-                        </button>
-                    </div>
+            <div class="file-item">
+                <input type="checkbox" class="file-checkbox" value="${file.name}" onchange="updateActionButtons()">
+                <div class="file-info">
+                    <div class="file-name">${escHtml(file.name)}</div>
+                    <div class="file-meta">${date.toLocaleDateString()} ${date.toLocaleTimeString()} &nbsp;|&nbsp; ${formatFileSize(file.size)}</div>
+                    ${copyBtns}
                 </div>
-            `;
-        });
+                <div class="file-actions">
+                    <button class="btn-icon btn-download-single" onclick="downloadSingleFile('${enc}')" title="Download">&#8595;</button>
+                    <button class="btn-icon btn-delete-single"   onclick="deleteSingleFile('${enc}')"   title="Delete">&#10005;</button>
+                </div>
+            </div>`;
+        }
         html += '</div>';
         container.innerHTML = html;
-
-        // Update pagination buttons
         updatePaginationButtons();
-
-    } catch (error) {
-        container.innerHTML = `
-            <div class="message error">
-                ❌ Failed to load files: ${error.message}
-            </div>
-        `;
+    } catch (err) {
+        container.innerHTML = `<div class="message error">Failed to load files: ${err.message}</div>`;
     }
 }
 
-// Update summary section
-function updateSummary(pagination) {
-    const summarySection = document.getElementById('summarySection');
-    summarySection.style.display = 'grid';
-
-    document.getElementById('totalFilesCount').textContent = pagination.totalFiles;
-    document.getElementById('totalFilesSize').textContent = formatFileSize(pagination.totalSize);
-    document.getElementById('currentPageFiles').textContent = 
-        `${Math.min((pagination.currentPage - 1) * pagination.filesPerPage + 1, pagination.totalFiles)}-${Math.min(pagination.currentPage * pagination.filesPerPage, pagination.totalFiles)}`;
+function buildCopyButtons(filename) {
+    const enc = encodeURIComponent(filename);
+    let html = '<div class="copy-paths">';
+    if (state.internalBaseUrl) {
+        const url = `${state.internalBaseUrl}/store/${enc}`;
+        html += `<button class="btn-copy" onclick="copyPath(this,'${escAttr(url)}')" title="${escAttr(url)}">Copy Internal HTTP Path</button>`;
+    }
+    if (state.externalBaseUrl) {
+        const url = `${state.externalBaseUrl}/store/${enc}`;
+        html += `<button class="btn-copy" onclick="copyPath(this,'${escAttr(url)}')" title="${escAttr(url)}">Copy External HTTPS Path</button>`;
+    }
+    html += '</div>';
+    return html;
 }
 
-// Update pagination buttons
+function copyPath(btn, url) {
+    navigator.clipboard.writeText(url).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+    }).catch(() => {
+        // fallback for older browsers
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+    });
+}
+
+// ── Summary & Pagination ──────────────────────────────────────────────────────
+function updateSummary(p) {
+    document.getElementById('summarySection').style.display = 'grid';
+    document.getElementById('totalFilesCount').textContent = p.totalFiles;
+    document.getElementById('totalFilesSize').textContent  = formatFileSize(p.totalSize);
+    const from = Math.min((p.currentPage - 1) * p.filesPerPage + 1, p.totalFiles);
+    const to   = Math.min(p.currentPage * p.filesPerPage, p.totalFiles);
+    document.getElementById('currentPageFiles').textContent = `${from}–${to}`;
+}
+
 function updatePaginationButtons() {
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const pageInfo = document.getElementById('pageInfo');
-
-    prevBtn.disabled = !state.paginationData.hasPrevPage;
-    nextBtn.disabled = !state.paginationData.hasNextPage;
-    pageInfo.textContent = `Page ${state.paginationData.currentPage} of ${state.paginationData.totalPages}`;
+    const p = state.paginationData;
+    document.getElementById('prevBtn').disabled = !p.hasPrevPage;
+    document.getElementById('nextBtn').disabled = !p.hasNextPage;
+    document.getElementById('pageInfo').textContent = `Page ${p.currentPage} of ${p.totalPages}`;
 }
 
-// Navigate to previous page
-function previousPage() {
-    if (state.currentPage > 1) {
-        state.currentPage--;
-        loadFiles();
-    }
-}
+function previousPage() { if (state.currentPage > 1) { state.currentPage--; loadFiles(); } }
+function nextPage()     { if (state.paginationData && state.currentPage < state.paginationData.totalPages) { state.currentPage++; loadFiles(); } }
+function changeItemsPerPage() { state.itemsPerPage = parseInt(document.getElementById('itemsPerPage').value); state.currentPage = 1; loadFiles(); }
 
-// Navigate to next page
-function nextPage() {
-    if (state.paginationData && state.currentPage < state.paginationData.totalPages) {
-        state.currentPage++;
-        loadFiles();
-    }
-}
-
-// Change items per page
-function changeItemsPerPage() {
-    state.itemsPerPage = parseInt(document.getElementById('itemsPerPage').value);
-    state.currentPage = 1;
-    loadFiles();
-}
-
-// Format file size to human readable
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-}
-
-// Update action buttons state (delete and download)
+// ── Action buttons ────────────────────────────────────────────────────────────
 function updateActionButtons() {
-    const checkboxes = document.querySelectorAll('.file-checkbox:checked');
-    const deleteBtn = document.getElementById('deleteBtn');
-    const downloadBtn = document.getElementById('downloadBtn');
-    const hasSelection = checkboxes.length > 0;
-    
-    deleteBtn.disabled = !hasSelection;
-    downloadBtn.disabled = !hasSelection;
+    const any = document.querySelectorAll('.file-checkbox:checked').length > 0;
+    document.getElementById('deleteBtn').disabled   = !any;
+    document.getElementById('downloadBtn').disabled = !any;
 }
 
-// Backward compatibility
-function updateDeleteButton() {
-    updateActionButtons();
-}
-
-// Delete selected files
+// ── Delete ────────────────────────────────────────────────────────────────────
 async function deleteSelectedFiles() {
-    const checkboxes = document.querySelectorAll('.file-checkbox:checked');
-    const filesToDelete = Array.from(checkboxes).map(cb => cb.value);
+    const files = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(c => c.value);
+    if (!files.length || !confirm(`Delete ${files.length} file(s)?`)) return;
+    await _deleteFiles(files);
+}
 
-    if (filesToDelete.length === 0) {
-        return;
-    }
+async function deleteSingleFile(enc) {
+    const name = decodeURIComponent(enc);
+    if (!confirm(`Delete "${name}"?`)) return;
+    await _deleteFiles([name]);
+}
 
-    if (!confirm(`Are you sure you want to delete ${filesToDelete.length} file(s)?`)) {
-        return;
-    }
-
+async function _deleteFiles(files) {
     try {
-        const response = await fetch('/api/delete', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ files: filesToDelete })
-        });
-
-        const result = await response.json();
-
-        if (response.ok || response.status === 207) {
-            const successCount = result.results.filter(r => r.success).length;
-            showMessage(`✅ Successfully deleted ${successCount} file(s)`, 'success');
+        const r = await fetch('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }) });
+        const d = await r.json();
+        if (r.ok || r.status === 207) {
+            const ok = d.results.filter(x => x.success).length;
+            showMessage(`Deleted ${ok} file(s)`, 'success');
             await loadFiles();
         } else {
-            showMessage(`❌ ${result.error}`, 'error');
+            showMessage(`Delete failed: ${d.error}`, 'error');
         }
-    } catch (error) {
-        showMessage(`❌ Delete failed: ${error.message}`, 'error');
+    } catch (err) {
+        showMessage(`Delete failed: ${err.message}`, 'error');
     }
 }
 
-// Download a single file
-function downloadSingleFile(encodedFilename) {
-    const filename = decodeURIComponent(encodedFilename);
-    window.location.href = `/api/download/${encodedFilename}`;
-    showMessage(`📥 Downloading ${filename}...`, 'success');
+// ── Download ──────────────────────────────────────────────────────────────────
+function downloadSingleFile(enc) {
+    window.location.href = `/api/download/${enc}`;
 }
 
-// Delete a single file
-async function deleteSingleFile(encodedFilename) {
-    const filename = decodeURIComponent(encodedFilename);
-    
-    if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/delete', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ files: [filename] })
-        });
-
-        const result = await response.json();
-
-        if (response.ok || response.status === 207) {
-            showMessage(`✅ File "${filename}" deleted successfully`, 'success');
-            await loadFiles();
-        } else {
-            showMessage(`❌ ${result.error}`, 'error');
-        }
-    } catch (error) {
-        showMessage(`❌ Delete failed: ${error.message}`, 'error');
-    }
-}
-
-// Download selected files as ZIP
 async function downloadSelectedFiles() {
-    const checkboxes = document.querySelectorAll('.file-checkbox:checked');
-    const filesToDownload = Array.from(checkboxes).map(cb => cb.value);
-
-    if (filesToDownload.length === 0) {
-        return;
-    }
-
+    const files = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(c => c.value);
+    if (!files.length) return;
+    showMessage(`Preparing download of ${files.length} file(s)...`, 'success');
     try {
-        showMessage(`📥 Preparing download of ${filesToDownload.length} file(s)...`, 'success');
-
-        const response = await fetch('/api/download-bulk', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ files: filesToDownload })
-        });
-
-        if (!response.ok) {
-            const error = await response.json();
-            showMessage(`❌ ${error.error}`, 'error');
-            return;
-        }
-
-        // Get the blob from response
-        const blob = await response.blob();
-        
-        // Get filename from Content-Disposition header or use default
-        const contentDisposition = response.headers.get('Content-Disposition');
-        let filename = 'expressfs-files.zip';
-        if (contentDisposition) {
-            // Extract filename from Content-Disposition header
-            // Format: attachment; filename="expressfs-files-2026-02-12T10-52-13.zip"
-            const matches = contentDisposition.match(/filename[^;=\n]*=["']?([^"';\n]*)["']?/);
-            if (matches && matches[1]) {
-                filename = matches[1].trim();
-            }
-        }
-
-        // Create download link and trigger download
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = filename.trim();
+        const r = await fetch('/api/download-bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }) });
+        if (!r.ok) { const e = await r.json(); showMessage(`Download failed: ${e.error}`, 'error'); return; }
+        const blob = await r.blob();
+        const cd   = r.headers.get('Content-Disposition') || '';
+        const m    = cd.match(/filename[^;=\n]*=["']?([^"';\n]*)["']?/);
+        const name = m ? m[1].trim() : 'zpro-files.zip';
+        const url  = URL.createObjectURL(blob);
+        const a    = Object.assign(document.createElement('a'), { href: url, download: name, style: 'display:none' });
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(url);
+        URL.revokeObjectURL(url);
         document.body.removeChild(a);
-
-        showMessage(`✅ Downloaded ${filesToDownload.length} file(s) as ${filename}`, 'success');
-    } catch (error) {
-        showMessage(`❌ Download failed: ${error.message}`, 'error');
+        showMessage(`Downloaded ${files.length} file(s) as ${name}`, 'success');
+    } catch (err) {
+        showMessage(`Download failed: ${err.message}`, 'error');
     }
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function formatFileSize(bytes) {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / 1024 ** i).toFixed(2).replace(/\.?0+$/, '') + ' ' + units[i];
+}
+
+function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function escAttr(s) {
+    return s.replace(/'/g,'&#39;').replace(/"/g,'&quot;');
 }

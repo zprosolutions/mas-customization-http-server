@@ -1,26 +1,32 @@
 ---
+# ZPro File Server – OpenShift Deployment
+# Internal HTTP service path (for Maximo):
+#   http://<service-name>.<namespace>.svc.cluster.local:8080/store/<filename>
+# External HTTPS ingress path (for browser access):
+#   https://<route-host>/store/<filename>
+#
+# Set INTERNAL_BASE_URL and EXTERNAL_BASE_URL env vars so the UI can offer
+# "Copy Path" buttons for each uploaded file.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: expressfs
+  name: zpro-file-server
   namespace: default
   labels:
-    app: expressfs
-    version: "2.0.2"
+    app: zpro-file-server
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: expressfs
+      app: zpro-file-server
   template:
     metadata:
       labels:
-        app: expressfs
-        version: "2.0.1"
+        app: zpro-file-server
     spec:
       containers:
-        - name: expressfs
-          image: quay.io/istrate/expressfs:2.0.2
+        - name: zpro-file-server
+          image: quay.io/zprosolutions/zpro-file-server:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -33,6 +39,17 @@ spec:
               value: "8080"
             - name: HOST
               value: "0.0.0.0"
+            # Internal HTTP URL of this Service (used by Maximo – must be HTTP, not HTTPS)
+            # Format: http://<service-name>.<namespace>.svc.cluster.local:8080
+            - name: INTERNAL_BASE_URL
+              value: "http://zpro-file-server.default.svc.cluster.local:8080"
+            # External HTTPS URL of the OpenShift Route (browser/ingress access)
+            # Update this after creating the Route and noting its hostname
+            - name: EXTERNAL_BASE_URL
+              value: "https://zpro-file-server-default.apps.your-cluster.example.com"
+            # Optional: override max upload size (default 5GB)
+            # - name: MAX_FILE_SIZE
+            #   value: "5GB"
           resources:
             limits:
               memory: "512Mi"
@@ -48,7 +65,6 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 30
             timeoutSeconds: 3
-            successThreshold: 1
             failureThreshold: 3
           readinessProbe:
             httpGet:
@@ -58,7 +74,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
-            successThreshold: 1
             failureThreshold: 3
           volumeMounts:
             - name: store-volume
@@ -66,65 +81,69 @@ spec:
       volumes:
         - name: store-volume
           persistentVolumeClaim:
-            claimName: expressfs-pvc
+            claimName: zpro-file-server-pvc
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
-      dnsPolicy: ClusterFirst
       securityContext: {}
-      schedulerName: default-scheduler
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 25%
-      maxSurge: 25%
-  revisionHistoryLimit: 10
-  progressDeadlineSeconds: 600
+      maxUnavailable: 1
+      maxSurge: 1
 ---
+# ClusterIP Service – HTTP only (no TLS inside the cluster)
 apiVersion: v1
 kind: Service
 metadata:
-  name: expressfs
+  name: zpro-file-server
   namespace: default
   labels:
-    app: expressfs
+    app: zpro-file-server
 spec:
   selector:
-    app: expressfs
+    app: zpro-file-server
   ports:
     - protocol: TCP
-      port: 80
+      port: 8080
       targetPort: 8080
       name: http
   type: ClusterIP
 ---
+# OpenShift Route – HTTPS at the edge, plain HTTP to the pod
+# TLS termination: edge (router terminates SSL; traffic to pod is HTTP)
+# This ensures external clients always use HTTPS while Maximo uses the
+# internal service URL over plain HTTP.
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: expressfs
+  name: zpro-file-server
   namespace: default
   labels:
-    app: expressfs
+    app: zpro-file-server
 spec:
   path: /
   to:
     kind: Service
-    name: expressfs
+    name: zpro-file-server
     weight: 100
   port:
     targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
   wildcardPolicy: None
 ---
+# PersistentVolumeClaim for uploaded files
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: expressfs-pvc
+  name: zpro-file-server-pvc
   namespace: default
   labels:
-    app: expressfs
+    app: zpro-file-server
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
       storage: 10Gi
-  storageClassName: standard

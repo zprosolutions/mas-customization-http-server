@@ -1,39 +1,18 @@
 {
-  "name": "expressfs",
-  "version": "2.0.0",
-  "description": "Modern static file server with upload, pagination, and progress tracking",
+  "name": "zpro-file-server",
+  "version": "1.0.0",
+  "description": "ZPro Solutions file server for MAS customization delivery",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "NODE_ENV=development node app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [
-    "static",
-    "file",
-    "server",
-    "upload",
-    "pagination",
-    "nodejs",
-    "expressfs",
-    "file-manager"
-  ],
-  "author": "Daniel Istrate",
-  "license": "ISC",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/istrate/expressfs"
+    "dev": "NODE_ENV=development node app.js"
   },
   "engines": {
-    "node": ">=14.0.0",
-    "npm": ">=6.0.0"
+    "node": ">=14.0.0"
   },
   "dependencies": {
     "archiver": "^7.0.1",
     "express": "^5.2.1",
-    "express-fileupload": "^1.5.2",
-    "path": "^0.12.7",
-    "serve-index": "^1.9.2",
-    "path-posix": "^1.0.0"
+    "express-fileupload": "^1.5.2"
   }
 }
